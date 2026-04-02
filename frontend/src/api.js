@@ -1,10 +1,8 @@
 import axios from 'axios'
 
-const baseURL = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
-  : '/api'
-
-const api = axios.create({ baseURL })
+// 개발: vite proxy → localhost:4000
+// 프로덕션: 같은 서버에서 서빙되므로 /api 그대로 사용
+const api = axios.create({ baseURL: '/api' })
 
 export const getRestaurants = (params) => api.get('/restaurants', { params })
 export const getRestaurant = (id) => api.get(`/restaurants/${id}`)
