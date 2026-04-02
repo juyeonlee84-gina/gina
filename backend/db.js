@@ -3,10 +3,20 @@ import 'dotenv/config'
 
 const { Pool } = pg
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-})
+const isProduction = process.env.NODE_ENV === 'production'
+
+const pool = isProduction
+  ? new Pool({
+      host: process.env.PGHOST,
+      user: process.env.PGUSER,
+      password: process.env.PGPASSWORD,
+      database: process.env.PGDATABASE,
+      port: Number(process.env.PGPORT) || 5432,
+      ssl: { rejectUnauthorized: false }
+    })
+  : new Pool({
+      connectionString: process.env.DATABASE_URL
+    })
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS restaurants (
