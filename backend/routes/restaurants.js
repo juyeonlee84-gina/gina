@@ -1,33 +1,23 @@
 import { Router } from 'express'
 import multer from 'multer'
-import { v2 as cloudinary } from 'cloudinary'
-import { CloudinaryStorage } from 'multer-storage-cloudinary'
 import pool from '../db.js'
 
 const router = Router()
 
-// Cloudinary 설정
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-})
-
-const storage = new CloudinaryStorage({
-  cloudinary,
-  params: {
-    folder: 'gina-restaurants',
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-    transformation: [{ width: 800, height: 600, crop: 'limit', quality: 'auto' }]
+// 사진을 메모리에 받아서 base64로 DB에 저장 (외부 서비스 불필요)
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024 }, // 3MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true)
+    else cb(new Error('이미지 파일만 업로드 가능합니다.'))
   }
 })
 
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 }
-})
+const fileToBase64 = (file) =>
+  `data:${file.mimetype};base64,${file.buffer.toString('base64')}`
 
-// 목록 조회 (검색, 필터)
+// 목록 조회 (사진은 목록에서 제외해 응답 속도 개선)
 router.get('/', async (req, res) => {
   try {
     const { q, category, region, rating, sort = 'created_at', order = 'desc' } = req.query
@@ -50,7 +40,8 @@ router.get('/', async (req, res) => {
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
 
     const { rows } = await pool.query(
-      `SELECT * FROM restaurants ${where} ORDER BY ${sortCol} ${sortDir}`,
+      `SELECT id, name, category, region, address, phone, rating, memo, photo, lat, lng, tags, created_at, updated_at
+       FROM restaurants ${where} ORDER BY ${sortCol} ${sortDir}`,
       params
     )
     res.json(rows)
@@ -86,17 +77,15 @@ router.post('/', upload.single('photo'), async (req, res) => {
       return res.status(400).json({ error: '이름, 카테고리, 지역은 필수입니다.' })
     }
 
-    const photo = req.file?.path || null
-    const photoPublicId = req.file?.filename || null
+    const photo = req.file ? fileToBase64(req.file) : null
     const tagList = tags ? JSON.parse(tags) : []
 
     const { rows } = await pool.query(`
-      INSERT INTO restaurants (name, category, region, address, phone, rating, memo, photo, photo_public_id, lat, lng, tags)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      INSERT INTO restaurants (name, category, region, address, phone, rating, memo, photo, lat, lng, tags)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
       RETURNING *
     `, [name, category, region, address || null, phone || null, Number(rating) || 0,
-      memo || null, photo, photoPublicId,
-      lat ? Number(lat) : null, lng ? Number(lng) : null, tagList])
+      memo || null, photo, lat ? Number(lat) : null, lng ? Number(lng) : null, tagList])
 
     res.status(201).json(rows[0])
   } catch (err) {
@@ -112,34 +101,21 @@ router.put('/:id', upload.single('photo'), async (req, res) => {
     const old = existing[0]
 
     const { name, category, region, address, phone, rating, memo, lat, lng, tags } = req.body
-
-    let photo = old.photo
-    let photoPublicId = old.photo_public_id
-
-    if (req.file) {
-      // 기존 Cloudinary 이미지 삭제
-      if (old.photo_public_id) {
-        await cloudinary.uploader.destroy(old.photo_public_id).catch(() => {})
-      }
-      photo = req.file.path
-      photoPublicId = req.file.filename
-    }
-
+    const photo = req.file ? fileToBase64(req.file) : old.photo
     const tagList = tags !== undefined ? JSON.parse(tags) : old.tags
 
     const { rows } = await pool.query(`
       UPDATE restaurants
       SET name=$1, category=$2, region=$3, address=$4, phone=$5, rating=$6,
-          memo=$7, photo=$8, photo_public_id=$9, lat=$10, lng=$11, tags=$12,
-          updated_at=NOW()
-      WHERE id=$13 RETURNING *
+          memo=$7, photo=$8, lat=$9, lng=$10, tags=$11, updated_at=NOW()
+      WHERE id=$12 RETURNING *
     `, [
       name ?? old.name, category ?? old.category, region ?? old.region,
       address !== undefined ? address : old.address,
       phone !== undefined ? phone : old.phone,
       rating !== undefined ? Number(rating) : old.rating,
       memo !== undefined ? memo : old.memo,
-      photo, photoPublicId,
+      photo,
       lat !== undefined ? Number(lat) : old.lat,
       lng !== undefined ? Number(lng) : old.lng,
       tagList, req.params.id
@@ -154,13 +130,8 @@ router.put('/:id', upload.single('photo'), async (req, res) => {
 // 삭제
 router.delete('/:id', async (req, res) => {
   try {
-    const { rows } = await pool.query(`SELECT * FROM restaurants WHERE id = $1`, [req.params.id])
+    const { rows } = await pool.query(`SELECT id FROM restaurants WHERE id = $1`, [req.params.id])
     if (!rows[0]) return res.status(404).json({ error: '맛집을 찾을 수 없습니다.' })
-
-    if (rows[0].photo_public_id) {
-      await cloudinary.uploader.destroy(rows[0].photo_public_id).catch(() => {})
-    }
-
     await pool.query(`DELETE FROM restaurants WHERE id = $1`, [req.params.id])
     res.json({ message: '삭제되었습니다.' })
   } catch (err) {

@@ -8,7 +8,6 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 })
 
-// 테이블 초기화
 await pool.query(`
   CREATE TABLE IF NOT EXISTS restaurants (
     id SERIAL PRIMARY KEY,
@@ -20,7 +19,6 @@ await pool.query(`
     rating NUMERIC(2,1) DEFAULT 0,
     memo TEXT,
     photo TEXT,
-    photo_public_id TEXT,
     lat NUMERIC(10,7),
     lng NUMERIC(10,7),
     tags TEXT[] DEFAULT '{}',
