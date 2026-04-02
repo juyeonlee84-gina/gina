@@ -1,0 +1,35 @@
+# 의존성
+node_modules/
+*/node_modules/
+
+# 환경변수 (절대 커밋 금지)
+.env
+.env.local
+.env.*.local
+
+# 빌드 결과물
+dist/
+build/
+
+# 로컬 DB 파일
+*.json
+!package.json
+!package-lock.json
+!*/package.json
+!*/package-lock.json
+!vercel.json
+
+# 업로드 파일
+backend/uploads/
+
+# 로그
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
